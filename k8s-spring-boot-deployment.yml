@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: springboot
-          image: jemimah/k8s-jenkins-aws:latest
+          image: jemimaht/k8s-jenkins-aws:latest
           ports:
             - containerPort: 8080
           env:
