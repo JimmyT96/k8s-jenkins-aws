@@ -1,80 +1,82 @@
+AWS EKS & Jenkins CI/CD Infrastructure
+This repository provides a production-grade blueprint for a CI/CD pipeline orchestrated by Jenkins 2.541.1 (LTS). It is architected to support Legacy Gradle 6.3 applications while deploying to modern Amazon EKS v1.35.
 
-AWS EKS & Jenkins CI/CD Infrastructure Setup
+1. Management Server (EC2)
+A dedicated Ubuntu 24.04 LTS instance (Type: t2.medium) serves as the Jenkins Controller. It is configured with a dual-JDK environment to bridge the gap between 2026 orchestration and legacy build requirements.
 
-This guide provides step-by-step instructions for provisioning an AWS EC2 management instance to orchestrate an Amazon EKS (Elastic Kubernetes Service) cluster using Jenkins.
+🧩 Jenkins 2.541.1 & Java Setup
+The Jenkins 2.541.1 controller requires Java 21 to run, while the Gradle 6.3 build requires Java 11.
 
- Prerequisites: Management Server (EC2)
-Launch an Ubuntu EC2 instance (Type: t2.medium) and install the following core tools:
-
-1. Java (JDK 11) & Jenkins
 Bash
 
+# 1. Install Java 11 (For Build) & Java 21 (For Jenkins 2.541.1)
 sudo apt-get update
-sudo apt install openjdk-11-jre-headless -y
+sudo apt install openjdk-11-jdk openjdk-21-jdk -y
 
-# Install Jenkins
-wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add -  
-sudo sh -c 'echo deb https://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+# 2. Add Mandatory 2026 Jenkins Signing Key 
+sudo wget -O /etc/apt/keyrings/jenkins-keyring.asc \
+  https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
+
+# 3. Install Jenkins 2.541.1 (LTS)
+echo "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] \
+  https://pkg.jenkins.io/debian-stable binary/" | sudo tee \
+  /etc/apt/sources.list.d/jenkins.list > /dev/null
 sudo apt-get update && sudo apt-get install jenkins -y
-Unlock Jenkins: Retrieve your password with sudo cat /var/lib/jenkins/secrets/initialAdminPassword.
-
-2. Permissions & Docker
-To allow Jenkins to build images, we must grant it sudo access and add it to the Docker group:
-
+Containerization & Security
 Bash
 
-# Add Jenkins to sudoers
-sudo visudo
-# Add line: jenkins ALL=(ALL) NOPASSWD: ALL
-
-# Install Docker
+# Grant Jenkins permission to build Docker images
 sudo apt install docker.io -y
 sudo usermod -aG docker jenkins
-3. AWS CLI & Cluster Tools
-Install the tools needed to communicate with AWS and Kubernetes:
 
-AWS CLI: sudo apt install awscli -y
-
-Kubectl: Download and move to /usr/local/bin.
-
-Eksctl: Download the weaveworks binary and move to /usr/local/bin.
-
- Cluster Provisioning
-Configure your AWS credentials using aws configure, then create your cluster:
+# Enable Passwordless Sudo for Jenkins CLI tasks
+sudo visudo
+# Add: jenkins ALL=(ALL) NOPASSWD: ALL
+2. Amazon EKS Cluster (v1.35)
+Infrastructure is deployed on Kubernetes 1.35, using modern managed node groups for high availability.
 
 Bash
 
 eksctl create cluster \
-  --name data-test-cluster \
-  --version 1.26 \
+  --name legacy-app-cluster \
+  --version 1.35 \
   --region us-east-1 \
-  --nodegroup-name worker-nodes \
-  --node-type t2.micro \
-  --nodes 2
-Note: Ensure your region in the command matches your AWS configuration.
+  --nodegroup-name workers-2026 \
+  --node-type t3.medium \
+  --nodes 2 \
+  --managed
+3. Legacy Compatibility (Gradle 6.3)
+This project maintains a Gradle 6.3 baseline via the Gradle Wrapper to ensure build reproducibility for legacy Spring Boot microservices.
 
-Jenkins Credential Management
-Before running the pipeline, store your secrets in Manage Jenkins > Credentials:
+Gradle Wrapper: Defined in gradle/wrapper/gradle-wrapper.properties as version 6.3.
 
-Docker Hub: Store as Secret Text (Registry credentials).
+JDK Scoping: Jenkins is configured to use Java 11 specifically for the ./gradlew build stage to prevent version mismatch errors.
 
-GitHub: Store as Username with password.
+Maintenance: This setup demonstrates the ability to manage "Technical Debt" by hosting legacy build logic on modern cloud infrastructure.
 
- Pipeline Stages
-The Jenkinsfile in this project is designed to:
+ 4. CI/CD Pipeline Stages
+Source: Pulls from GitHub via GITHUB_CREDS.
 
-Checkout: Pull source code from GitHub.
+Gradle Build: Executes ./gradlew clean build using the Java 11 environment.
 
-Build: Package the application.
+Dockerize: Packages the application using the project Dockerfile.
 
-Dockerize: Build and tag the image.
+Push: Uploads to Docker Hub via DOCKER_HUB_CREDS.
 
-Push: Upload image to Docker Hub.
+K8s Deploy: Performs a rolling update on EKS via kubectl apply.
 
-Deploy: Update the EKS cluster using kubectl.
+Repository Structure
+gradle/wrapper/: Contains the Gradle 6.3 executable properties.
 
- Author
+build.gradle: Application build logic and dependencies.
+
+Jenkinsfile: Pipeline-as-code definition for Jenkins 2.541.1.
+
+Dockerfile: Containerization instructions for the microservice.
+
+deployment.yml: Kubernetes manifest for the EKS 1.35 deployment.
+
+Author
 Jimmy96 T.
 
 DevOps & Cloud Specialist
-
