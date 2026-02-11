@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: springboot
-          image: jemimaht/k8s-jenkins-aws:latest
+          image: jhooq-spring-boot-docker-compose:1
           ports:
             - containerPort: 8080
           env:
