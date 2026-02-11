@@ -1,64 +1,80 @@
-# k8s-jenkins-aws
-1.Setup an AWS EC2 Instance
-The first step would be for us to set up an EC2 instance and on this instance, we will be installing -
 
-JDK
-Jenkins
-eksctl
-kubectl
+AWS EKS & Jenkins CI/CD Infrastructure Setup
 
-1.1 Launch EC2 instance with instance type t2.medium
-2.Install JDK on AWS EC2 Instance
-   sudo apt-get update
-   sudo apt install openjdk-11-jre-headless
-   java -version
-3.Install and Setup Jenkins
-  wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add -  
-  sudo sh -c 'echo deb https://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
-  sudo apt-get update
-  sudo apt-get install jenkins
-  sudo service jenkins status
-  #If you are installing the Jenkins for the first time then you need to supply the initialAdminPassword and you can obtain it from
-  sudo cat /var/lib/jenkins/secrets/initialAdminPassword
-4.Setup Gradle
-5.Update visudo and assign administration privileges to jenkin5. Update visudo and assign administration privileges to jenkins users user
- sudo vi /etc/sudoers
- jenkins ALL=(ALL) NOPASSWD: ALL
- sudo su - jenkins
-6.Install Docker
-  sudo apt install docker.io
-6.1 Add jenkins user to Docker group
- sudo usermod -aG docker jenkins
-7.Install and Setup AWS CLI
-  sudo apt install awscli
-  aws --version
-7.1 Configure AWS CLI
-  aws configure
-  Once you execute the above command it will ask for the following information -
+This guide provides step-by-step instructions for provisioning an AWS EC2 management instance to orchestrate an Amazon EKS (Elastic Kubernetes Service) cluster using Jenkins.
 
-  AWS Access Key ID [None]:
-  AWS Secret Access Key [None]:
-  Default region name [None]:
-  Default output format [None]:
-8.Install and Setup Kubectl
-  curl -LO "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"    
-  chmod +x ./kubectl
-  sudo mv ./kubectl /usr/local/bin
-9.Install and Setup eksctl
-   curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
-   sudo mv /tmp/eksctl /usr/local/bin 
-   eksctl version
- 10.Create eks cluster using eksctl
-   eksctl create cluster --name data-test-cluster --version 1.26 --region us-eust-1 --nodegroup-name worker-nodes --node-type t2.micro --nodes 2
-11.Add Docker and GitHub Credentials into Jenkins
-11.1 Setup Docker Hub Secret Text in Jenkins
-You can set the docker credentials by going into -
+ Prerequisites: Management Server (EC2)
+Launch an Ubuntu EC2 instance (Type: t2.medium) and install the following core tools:
 
-Goto -> Jenkins -> Manage Jenkins -> Manage Credentials -> Stored scoped to jenkins -> global -> Add Credentials
+1. Java (JDK 11) & Jenkins
+Bash
 
-11.2 Setup GitHub Username and password into Jenkins
-Now we add one more username and password for GitHub.
+sudo apt-get update
+sudo apt install openjdk-11-jre-headless -y
 
-Goto -> Jenkins -> Manage Jenkins -> Manage Credentials -> Stored scoped to jenkins -> global -> Add Credentials
-12.Add jenkins stages
-Okay, now we can start writing out the Jenkins pipeline for deploying the Spring Boot Application into the Kubernetes Cluster.
+# Install Jenkins
+wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add -  
+sudo sh -c 'echo deb https://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+sudo apt-get update && sudo apt-get install jenkins -y
+Unlock Jenkins: Retrieve your password with sudo cat /var/lib/jenkins/secrets/initialAdminPassword.
+
+2. Permissions & Docker
+To allow Jenkins to build images, we must grant it sudo access and add it to the Docker group:
+
+Bash
+
+# Add Jenkins to sudoers
+sudo visudo
+# Add line: jenkins ALL=(ALL) NOPASSWD: ALL
+
+# Install Docker
+sudo apt install docker.io -y
+sudo usermod -aG docker jenkins
+3. AWS CLI & Cluster Tools
+Install the tools needed to communicate with AWS and Kubernetes:
+
+AWS CLI: sudo apt install awscli -y
+
+Kubectl: Download and move to /usr/local/bin.
+
+Eksctl: Download the weaveworks binary and move to /usr/local/bin.
+
+ Cluster Provisioning
+Configure your AWS credentials using aws configure, then create your cluster:
+
+Bash
+
+eksctl create cluster \
+  --name data-test-cluster \
+  --version 1.26 \
+  --region us-east-1 \
+  --nodegroup-name worker-nodes \
+  --node-type t2.micro \
+  --nodes 2
+Note: Ensure your region in the command matches your AWS configuration.
+
+Jenkins Credential Management
+Before running the pipeline, store your secrets in Manage Jenkins > Credentials:
+
+Docker Hub: Store as Secret Text (Registry credentials).
+
+GitHub: Store as Username with password.
+
+ Pipeline Stages
+The Jenkinsfile in this project is designed to:
+
+Checkout: Pull source code from GitHub.
+
+Build: Package the application.
+
+Dockerize: Build and tag the image.
+
+Push: Upload image to Docker Hub.
+
+Deploy: Update the EKS cluster using kubectl.
+
+ Author
+Jimmy96 T.
+
+DevOps & Cloud Specialist
+
