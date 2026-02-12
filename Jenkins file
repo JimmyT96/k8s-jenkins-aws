@@ -1,76 +1,53 @@
 pipeline {
     agent any
 
-    tools {
-        jdk 'JDK-11.0.30'
-        gradle 'Gradle-6.3'
+    environment {
+        DOCKER_IMAGE_NAME = "jhooq-spring-boot-docker-compose"
+        DOCKER_HUB_USER   = "jemimaht"
+        DOCKER_CREDS_ID   = "docker-hub-credentials"
+        
+        EKS_CLUSTER_NAME  = "jhooq-eks-cluster"
+        AWS_REGION        = "us-east-1"
+        KUBE_CREDS_ID     = "eks-kubeconfig"
     }
 
-    environment {
-        AWS_REGION      = 'us-east-1'
-        EKS_CLUSTER     = 'Eks-gradle-cluster'
-        DOCKER_CREDS_ID = 'DOCKERHUB_VAULT_KEY'
-        AWS_CREDS_ID    = 'AWS_CREDENTIALS' 
-        IMAGE_NAME      = 'Jemimaht/jhooq-spring-boot-docker-compose'
+    tools {
+        jdk "JDK-11"
+        gradle "Gradle-6.3"
     }
 
     stages {
-        stage('Initialize') {
+        stage('Checkout') {
             steps {
-                // Ensure the wrapper is executable
-                sh 'chmod +x gradlew'
+                checkout scm
             }
         }
 
-        stage('Build with Gradle') {
+        stage('Build Artifact') {
             steps {
-                sh './gradlew clean build -x test'
+                sh 'gradle clean build -x test'
             }
         }
 
-        stage('Docker Build & Tag') {
+        stage('Docker Build & Push') {
             steps {
-                echo "Building image: ${env.IMAGE_NAME}"
-                sh "docker build -t ${env.IMAGE_NAME}:1 ."
-                sh "docker tag ${env.IMAGE_NAME}:1 ${env.IMAGE_NAME}:1-${env.BUILD_NUMBER}"
-            }
-        }
-
-        stage('Registry Push') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: "${env.DOCKER_CREDS_ID}", 
-                                                 passwordVariable: 'PASS', 
-                                                 usernameVariable: 'USER')]) {
-                    
-                    echo "Logging into Docker Hub..."
-                    sh "echo ${PASS} | docker login -u ${USER} --password-stdin"
-                    
-                    sh "docker push ${env.IMAGE_NAME}:1"
-                    sh "docker push ${env.IMAGE_NAME}:1-${env.BUILD_NUMBER}"
+                script {
+                    docker.withRegistry('', "${DOCKER_CREDS_ID}") {
+                        def appImage = docker.build("${DOCKER_HUB_USER}/${DOCKER_IMAGE_NAME}:${env.BUILD_NUMBER}")
+                        appImage.push()
+                        appImage.push("latest")
+                    }
                 }
             }
         }
 
         stage('EKS Deployment') {
             steps {
-                // Securely inject AWS keys for the AWS CLI and Kubectl
-                withCredentials([usernamePassword(credentialsId: "${env.AWS_CREDS_ID}", 
-                                                 passwordVariable: 'AWS_SECRET_ACCESS_KEY', 
-                                                 usernameVariable: 'AWS_ACCESS_KEY_ID')]) {
-                    script {
-                        echo "Connecting to EKS Cluster: ${env.EKS_CLUSTER}..."
-                        sh "aws eks update-kubeconfig --region ${env.AWS_REGION} --name ${env.EKS_CLUSTER}"
-                        
-                        echo "Applying Kubernetes Manifest..."
-                        
-                        sh "kubectl apply -f k8s-spring-boot-deployment.yml"
-                        
-                        echo "Updating deployment image..."
-                        
-                        sh "kubectl set image deployment/jhooq-springboot springboot=${env.IMAGE_NAME}:1-${env.BUILD_NUMBER}"
-                        
-                        echo "Waiting for rollout to complete..."
-                        sh "kubectl rollout status deployment/jhooq-springboot --timeout=2m"
+                script {
+                    sh "sed -i 's|image:.*|image: ${DOCKER_HUB_USER}/${DOCKER_IMAGE_NAME}:${env.BUILD_NUMBER}|' k8s-spring-boot.yml"
+                    
+                    withKubeConfig([credentialsId: "${KUBE_CREDS_ID}", clusterName: "${EKS_CLUSTER_NAME}"]) {
+                        sh "kubectl apply -f k8s-spring-boot.yml"
                     }
                 }
             }
@@ -78,15 +55,14 @@ pipeline {
     }
 
     post {
-        always {
-            // Clean up Docker credentials on the agent
-            sh 'docker logout || true'
-        }
         success {
-            echo "✅ Successfully deployed Build #${env.BUILD_NUMBER} to EKS."
+            echo "Successfully deployed Build #${env.BUILD_NUMBER} to EKS."
         }
         failure {
-            echo "❌ Build #${env.BUILD_NUMBER} failed. Check the logs above."
+            echo "Build #${env.BUILD_NUMBER} failed. Check console output for errors."
+        }
+        always {
+            cleanWs()
         }
     }
 }
