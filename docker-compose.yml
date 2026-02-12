@@ -1,12 +1,22 @@
-version: '3'
-
 services:
   jhooq-springboot-container:
-    image: jhooq-spring-boot-docker-compose:1
+    image: jhooq-spring-boot-docker-compose:latest
     build:
       context: ./
       dockerfile: Dockerfile
     volumes:
-      - /data/jhooq-springboot-container
+      - jhooq-data:/data/jhooq-springboot-container
     ports:
-      - "8080-8100:8080"
+      - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 640M
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+    restart: unless-stopped
+
+volumes:
+  jhooq-data:
